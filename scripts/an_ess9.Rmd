@@ -8,11 +8,9 @@ output: html_document
 In this file, I use round 9 ESS data to reproduce some of the analyses of Norris and Inglehart (2019) "Cultural Backlash" and also provide my own additional analyses.
 
 Packages and functions
-<<<<<<< HEAD
+
 ```{r, message = FALSE}
-=======
-```{r}
->>>>>>> bf4084247c05632565b8e98746a0fd6754471bc0
+
 # Loading R-libraries.
 
 if (!require("pacman")) install.packages("pacman")
@@ -87,13 +85,10 @@ ggsave(here("figures", "vote_trust_resp.png"),
 ```
 
 
-<<<<<<< HEAD
 Regression analysis - authoritarian populist parties.
 
-=======
-Regression
->>>>>>> bf4084247c05632565b8e98746a0fd6754471bc0
 ```{r}
+
 library(ggeffects)
 library(lme4)
 
@@ -109,11 +104,6 @@ summary(m3)
 
 ggpredict(m2, c("cohort"))
 
-<<<<<<< HEAD
-=======
-
-
->>>>>>> bf4084247c05632565b8e98746a0fd6754471bc0
 ggplot(data = predage, aes(x = x, y = predicted))+
   geom_ribbon(aes(ymin = conf.low, ymax = conf.high, color=NULL),
               alpha=0.4)+
@@ -128,10 +118,6 @@ ggplot(data = predage, aes(x = x, y = predicted))+
 
 ```
 
-<<<<<<< HEAD
-Regression analyses authoritarian populist parties and plotting the coefficients.
-=======
->>>>>>> bf4084247c05632565b8e98746a0fd6754471bc0
 ```{r}
 
 mod <- lm(popauth~ cohort + gender + married + separate + children + 
@@ -171,15 +157,8 @@ p2 <- modelplot(mod2, coef_map= cm)+
   theme_bw()+
   theme(axis.text = element_text(color="black"))
 
-<<<<<<< HEAD
 p1 + p2
 ggsave(here("figures", "coefplot.png"),
        device="png", height=4, 
        width=6, units="in", dpi=500)
-=======
-png("figures/coefplot.png", units="in", width=6, height=4, res=500)
-p1 + p2
-dev.off()
->>>>>>> bf4084247c05632565b8e98746a0fd6754471bc0
-
 ```
