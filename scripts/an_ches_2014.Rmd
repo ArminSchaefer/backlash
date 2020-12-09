@@ -1,0 +1,166 @@
+---
+title: "an_ches"
+author: "Armin"
+date: "19 5 2020"
+output: pdf_document
+---
+
+```{r, message=FALSE, warning=FALSE}
+
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(readr, tidyverse, Hmisc, dplyr, psych, GPArotation,
+               naniar, ggpubr, haven, here, scales, openxlsx)
+
+```
+
+Read in the CHES-dataset
+```{r}
+ches <- read.csv("https://www.chesdata.eu/s/2014_CHES_dataset_means.csv", 
+                          fileEncoding = "UTF-8")
+
+ches$auth <- scales::rescale((ches$galtan + ches$nationalism + ches$civlib_laworder + 
+               ches$multiculturalism + ches$sociallifestyle +
+               ches$immigrate_policy + ches$ethnic_minorities), to = c(0,100))
+
+ches$pop <- scales::rescale((ches$antielite_salience + ches$corrupt_salience), to = c(0,100))
+
+
+ches$lr <- scales::rescale((ches$deregulation + ches$econ_interven +
+                              ches$redistribution + ches$spendvtax),
+                           to = c(0,100))
+
+ches$lr2 <- ifelse(ches$lr>50,1,0)
+
+ches$lr2 <- factor(ches$lr2,
+                      levels = c(0,1),
+                      labels = c("left", "right"))
+
+
+```
+
+Principal component analysis
+```{r}
+
+pci <- ches %>%
+  select(galtan, nationalism, civlib_laworder, multiculturalism, sociallifestyle,
+         immigrate_policy, ethnic_minorities, corrupt_salience, antielite_salience,
+         deregulation, redistribution, econ_interven, spendvtax) 
+
+fa <- principal(pci,3)
+kaiser <- kaiser(fa(pci,3,rotate="varimax"))
+fsk <- factor.scores(pci, kaiser)
+fsk <- fsk$scores                       
+
+fit <- principal(pci, nfactors=3, rotate="varimax")
+fs <- factor.scores(pci, fit)
+fs <- fs$scores                       
+loadings(fit)
+parties <- cbind(ches,fsk, fs) 
+
+parties %>%
+  select(RC1, MR1) %>%
+  cor(use = "complete.obs")
+
+parties$popfct <- scales::rescale(parties$RC3, to=c(0,100))
+parties$authfct <- scales::rescale(parties$RC1, to=c(0,100))
+parties$lrfct <- scales::rescale(parties$RC2, to=c(0,100))
+
+parties <- parties %>%
+  mutate(lr3 = case_when(
+    lr <20 ~ "1",
+    lr >20 & lr <80 ~ "2",
+    lr >80 ~ "3",
+    TRUE ~ "NA"
+    ))
+
+parties$lr3 <- factor(parties$lr3,
+                      levels = c(1,2,3),
+                      labels = c("left", "center", "right"))
+
+```
+
+```{r}
+
+ggplot(data = ches, aes(x = pop, y = auth, shape = lr2))+
+  geom_point(size=3) +
+  ggrepel::geom_text_repel(aes(label = party_name),
+                           size=2)+
+  labs(x = "Populism",
+       y = "Authoritarianism",
+       shape = NULL)+
+  scale_shape_manual(values=c(2, 18))+
+  theme_minimal()+
+  theme(axis.text = element_text(color = "black"))
+
+ggsave(here("figures", "autpopparties.png"),
+       device="png", height=6, 
+       width=9, units="in", dpi=600)
+
+```
+
+
+Anti-corruption salience and antielite salience
+```{r}
+parties %>%
+ ggplot(aes(x = antielite_salience, y = corrupt_salience, color=pop))+
+  geom_smooth(method = "lm", color="grey70", fill="grey80")+
+  geom_point()+
+  viridis::scale_color_viridis(direction = -1)+
+  theme_minimal()+
+  theme(axis.text = element_text(color = "black"))
+
+```
+
+Authoritarian and left-right
+
+```{r}
+ches %>%
+ ggplot(aes(x = lr, y = auth, color=pop))+
+  geom_smooth(method = "lm", color="grey70", fill="grey80")+
+  geom_point()+
+  viridis::scale_color_viridis(direction = -1)+
+  labs(x = "Links-rechts-Skala",
+       y = "Autoritarismus")+
+  theme_minimal()+
+  theme(axis.text = element_text(color = "black"))
+
+
+```
+
+
+
+
+
+```{r}
+
+ches %>%
+  filter(cname %in% c("ger", "fra",
+                     "gre", "hun")) %>%
+  ggplot(aes(x = pop, y = auth, color=lr))+
+  geom_point() +
+  ggrepel::geom_text_repel(aes(label = party_name))+
+  viridis::scale_color_viridis(direction = -1)+
+  labs(x = "Populismus",
+       y = "Autoritarismus")+
+  theme_minimal()+
+  theme(axis.text = element_text(color = "black"))+
+  facet_wrap(~cname)
+
+```
+
+```{r}
+
+parties %>%
+  filter(cname %in% c("ger", "fra",
+                     "gre", "hun")) %>%
+  ggplot(aes(x = antielite_salience, y = auth, color=lr))+
+  geom_point() +
+  ggrepel::geom_text_repel(aes(label = party_name))+
+  viridis::scale_color_viridis(direction = -1)+
+  labs(x = "Populismus",
+       y = "Autoritarismus")+
+  theme_minimal()+
+  theme(axis.text = element_text(color = "black"))+
+  facet_wrap(~cname)
+
+```

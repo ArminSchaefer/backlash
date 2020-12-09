@@ -1,0 +1,73 @@
+---
+title: "BES"
+author: "Armin Schäfer"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: html_document
+---
+
+In this file, we use data from the British Election Study: Fieldhouse, E., J. Green, G. Evans, J. Mellon & C. Prosser (2020): British Election Study Internet Panel Waves 1-19. After registration, it is freely available here: (https://www.britishelectionstudy.com/data-objects/panel-study-data/).
+
+```{r, message=FALSE, warning=FALSE}
+
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(tidyverse, haven, ggpubr, here,
+               janitor, ggdist, patchwork)
+
+tabl <- function(...) table(..., useNA='ifany')
+
+```
+
+Load data
+
+```{r}
+
+bes <- readRDS(here("raw-data", "downloaded BES data")) 
+
+bes$ref <- ifelse(bes$euRefVoteW9>1,NA,bes$euRefVoteW9)
+
+bes$yearbrn <- 2016 - as.numeric(bes$ageW9)
+
+bes <- bes %>%
+  mutate(cohort = case_when(
+    yearbrn %in% 1900:1945 ~ "1",
+    yearbrn %in% 1946:1964 ~ "2",
+    yearbrn %in% 1965:1979 ~ "3",
+    yearbrn %in% 1980:1998 ~ "4"
+  ))
+
+bes$cohort <- factor(bes$cohort,
+                     levels = c(1:4),
+                     labels = c("Interwar",
+                                "Baby Boomers",
+                                "Generation X",
+                                "Millennials"))
+
+bes$male <- ifelse(bes$gender==2,0,bes$gender)
+
+bes <- bes %>%
+  mutate_at(vars(populism1W7:populism6W7), ~ifelse(. ==9999,NA,.))
+
+bes$populism <- scales::rescale(bes$populism1W7 +
+                                bes$populism2W7 +
+                                bes$populism4W7 +
+                                bes$populism5W7 +
+                                bes$populism6W7, na.rm=T, to=c(0,100))
+
+bes$populism2 <- (bes$populism1W7 +
+                                bes$populism2W7 +
+                                bes$populism4W7 +
+                                bes$populism5W7 +
+                                bes$populism6W7)
+
+
+bes <- bes %>%
+    mutate(graduate = case_when(
+      anyUniW9 %in% 1:3 ~"1",
+      anyUniW9 %in% 0 ~"0"))
+
+arb_bes <- bes %>%
+  select(id, cohort, populism, populism2, al_scaleW7_W9)
+
+saveRDS(arb_bes, file = (here("processed-data", "arb_bes.rds")))
+
+```

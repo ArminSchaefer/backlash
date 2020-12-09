@@ -1,0 +1,81 @@
+---
+title: "BES"
+author: "Armin Schäfer"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: html_document
+---
+
+```{r, message=FALSE, warning=FALSE}
+
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(tidyverse, haven, ggpubr, here,
+               janitor, ggdist, patchwork)
+
+tabl <- function(...) table(..., useNA='ifany')
+
+# prepared British election Study dataset
+bes <- readRDS(here("processed-data", "arb_bes.RDS")) 
+
+```
+
+```{r}
+
+bes %>%
+  group_by(cohort) %>%
+  summarize(populism = mean(populism2, na.rm=T))
+  
+  
+bes %>%
+  group_by(cohort) %>%
+  summarize(libauth = mean(al_scaleW7_W9, na.rm=T)) %>%
+  ggplot(aes(x = cohort, y = libauth))+
+  geom_col()
+
+```
+
+
+```{r}
+ggplot(data = bes, aes(x = populism,
+                       color=cohort))+
+  geom_density(size=1)
+
+ggplot(data = bes, aes(x = al_scaleW7_W9,
+                       color=cohort))+
+  geom_density(size=1)
+
+```
+
+
+```{r}
+
+half1 <- bes %>%
+  filter(!is.na(cohort)) %>%
+  filter(!is.na(al_scaleW7_W9)) %>%
+  ggplot(aes(y = cohort, x = al_scaleW7_W9)) +
+  stat_halfeye()+
+  labs(y = NULL,
+       x = "Libertarian-authoritarian scale")+
+  theme_minimal()+
+  theme(axis.text = element_text(color = "black"),
+        legend.position="")
+
+
+half2 <- bes %>%
+  filter(!is.na(cohort)) %>%
+  filter(!is.na(populism2)) %>%
+  ggplot(aes(y = cohort, x = populism2)) +
+  stat_halfeye()+
+  labs(y = NULL,
+       x = "Populism scale")+
+  theme_minimal()+
+  theme(axis.text = element_text(color = "black"),
+        legend.position = "")
+
+
+half1 / half2
+
+ggsave(here("figures", "bes_values.png"),
+       device="png", height=4, 
+       width=6, units="in", dpi=500)
+
+``` 
