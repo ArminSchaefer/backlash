@@ -1,0 +1,159 @@
+---
+title: "Replication Norris-Inglehart"
+author: "Armin Schäfer"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+```
+
+```{r}
+# Loading R-libraries.
+
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(essurvey, readr, tidyverse, Hmisc, dplyr, psych, naniar, here, scales,
+               srvyr, fixest, corpcor, lm4, RCurl, ggpubr)
+
+# useful function
+tabl <- function(...) table(..., useNA="ifany")
+
+```
+
+Load the dataset and prepare for analyses. To access ESS data, you have to register first. Go to the [ESS website](http://www.europeansocialsurvey.org/user/new) and provide your details. Download rounds 1 to 8 and save them at your working directory.
+
+```{r}
+
+# This script only works, if you have downloaded and saved ESS data.
+
+ess_1_8 <- read.csv(here("raw-data", "your downloaded ESS data"))
+
+ess <- recode_missings(ess_1_8)
+
+# Oesch class scheme
+url <- "https://raw.githubusercontent.com/jolyphil/" %>% 
+  paste0("oesch-class/master/data/oesch_class_ess_1-8.csv")
+classvar <- url %>%
+  getURL() %>%
+  read.csv(text = .) %>%
+  mutate(idno = as.numeric(idno), 
+         essround = as.numeric(essround)) %>%
+  select(idno, cntry, essround, class5, class8)
+
+ess_1_8 <- ess_1_8 %>%
+  left_join(classvar, by = c("idno", "cntry", "essround"))
+
+ess$cntry <- as.factor(ess$cntry)
+
+# Only use rounds 1 to 7
+ess <- ess_1_8 %>%
+  filter(essround!=8)
+
+
+## Demographics
+
+# Cohorts
+ess$yrbrn <- ifelse(ess$yrbrn<1900, NA, ess$yrbrn)
+ess$yrbrn <- ifelse(ess$yrbrn>1996, NA, ess$yrbrn)
+
+ess <- ess %>%
+  mutate(cohort = case_when(
+    yrbrn %in% 1900:1945 ~ "1",
+    yrbrn %in% 1946:1964 ~ "2",
+    yrbrn %in% 1965:1979 ~ "3",
+    yrbrn %in% 1980:1996 ~ "4"
+  ))
+
+ess$cohort <- as.factor(ess$cohort)
+
+ess$age <- ifelse(ess$agea==999, NA, ess$agea)
+
+ess$gndr <- ifelse(ess$gndr>2, NA, ess$gndr)
+ess <- ess %>%
+  mutate(gender = case_when(
+    gndr == 1 ~ 1,
+    gndr == 2 ~ 0))
+
+ess$edulvla <- ifelse(ess$edulvla>5,NA,ess$edulvla)
+
+ess$urban <- ifelse(ess$domicil>5, NA, ess$domicil)
+
+ess$relig <- ifelse(ess$rlgdgr>10, NA, ess$rlgdgr)
+
+## Attitudes (higher values -> more liberal values)
+
+ess$freehms <- ifelse(ess$freehms>5,NA,ess$freehms)
+ess$freehms <- 6-ess$freehms
+
+ess$wmcpwrk <- ifelse(ess$wmcpwrk>5,NA,ess$wmcpwrk)
+
+ess$imueclt <- ifelse(ess$imueclt>10,NA,ess$imueclt)
+ess$euftf <- ifelse(ess$euftf>10,NA,ess$euftf)
+ess$imwbcnt <- ifelse(ess$imwbcnt>10,NA,ess$imwbcnt)
+
+ess$eisced <- ifelse(ess$eisced>7,NA,ess$eisced)
+
+ess$behave <- 7-(ifelse(ess$ipbhprp>6, NA, ess$ipbhprp))
+ess$secure <- 7-(ifelse(ess$impsafe>6, NA, ess$impsafe))
+ess$safety <- 7-(ifelse(ess$ipstrgv>6, NA, ess$ipstrgv))
+ess$tradition <- 7-(ifelse(ess$imptrad>6, NA, ess$imptrad))
+ess$rules <- 7-(ifelse(ess$ipfrule>6, NA, ess$ipfrule))
+ess$surprise <- 7-(ifelse(ess$impdiff>6, NA, ess$impdiff))
+ess$adventure <- 7-(ifelse(ess$ipadvnt>6, NA, ess$ipadvnt))
+ess$creative <- 7-(ifelse(ess$ipcrtiv>6, NA, ess$ipcrtiv))
+ess$free <- 7-(ifelse(ess$impfree>6, NA, ess$impfree))
+ess$listen <- 7-(ifelse(ess$ipudrst>6, NA, ess$ipudrst))
+
+ess$schwartzauth <- rescale(ess$behave + 
+                      ess$secure + 
+                      ess$safety + 
+                      ess$tradition + 
+                      ess$rules, na.rm=T, to=c(0,100))
+
+ess$schwartzlib <- rescale(ess$surprise + 
+                ess$adventure + 
+                ess$creative + 
+                ess$free + 
+                ess$listen, na.rm=T, to=c(0,100))
+
+ess$weight <- ess$dweight * ess$pweight
+
+# Populist scale
+ess$trstplt <- ifelse(ess$trstplt>10, NA, ess$trstplt)
+ess$trstprl <- ifelse(ess$trstprl>10, NA, ess$trstprl)
+ess$trstprt <- ifelse(ess$trstprt>10, NA, ess$trstprt)
+
+ess$populist <- rescale(ess$trstplt + ess$trstprl + ess$trstprt, na.rm=T, to=c(0,100))
+
+ess$pop1 <- as.numeric(ifelse(ess$essround==1, ess$trstprl+ess$trstplt, "NA"))
+ess$pop1 <- rescale(ess$pop1, to=c(100,0))
+ess$pop2 <- rescale((ess$trstplt + ess$trstprl + ess$trstprt), to=c(100,0))
+ess$populist2 <- ifelse(ess$essround==1, ess$pop1, ess$pop2)
+
+
+ess_1_7 <- ess %>%
+  select(cntry, essround, edition, idno, dweight:pweight, freehms, 
+         imueclt, imwbcnt, euftf, ipcrtiv:populist2)
+
+```
+
+
+Principal component anlaysis: Scales for authoritarian and libertarian values
+```{r}
+
+schwartz <- ess_1_7 %>%
+  select(behave, secure, safety, tradition, rules,
+         surprise, adventure, creative, free, listen) 
+
+fit <- principal(schwartz, nfactors=2, rotate="varimax")
+
+fs <- factor.scores(schwartz, fit)
+fs <- fs$scores                       
+ess_1_7 <- cbind(ess_1_7,fs)
+
+saveRDS(ess_1_7, file = (here("processed-data", "arb_ess_1_7.rds")))
+
+```

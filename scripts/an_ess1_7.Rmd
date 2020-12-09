@@ -1,0 +1,459 @@
+---
+title: "Replication Norris-Inglehart, ESS 1-7"
+author: "Armin Schäfer"
+date: "`r format(Sys.time(),  '%B %d, %Y')`"
+output: html_document
+---
+
+In this file, I reproduce some of the analyses in Norrs/Inglehart (2019) with the European Social Survey rounds 1 to 7.
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+```
+
+```{r}
+# Loading R-libraries.
+
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(essurvey, readr, tidyverse, Hmisc, dplyr, psych, naniar, here, scales,
+               srvyr, fixest, corpcor, lme4, RCurl, ggpubr)
+
+# useful function
+tabl <- function(...) table(..., useNA="ifany")
+
+# load the dataset created with "arb_ess_1-7.RMD"
+
+ess_1_7 <- readRDS(here("processed-data", "arb_ess_1_7.RDS"))
+
+```
+
+
+Median age per cohort
+```{r}
+
+ess_1_7 %>%
+  group_by(cohort)%>%
+  summarise(medage = median(age, na.rm=T))
+
+```
+
+Cultural attitudes
+
+Example: Gays and lesbians should be free to life their lives at the wish
+```{r, message = FALSE, warning = FALSE}
+
+p1 <- ess_1_7 %>%
+  filter_at(vars(cohort, freehms),all_vars(!is.na(.)))%>%
+  mutate(freehmsz = wt.scale(freehms, weight)) %>%
+  group_by(cohort) %>%
+  summarise(mfree = weighted.mean(freehmsz, weight, na.rm=T)) %>%
+ggplot()+
+  geom_hline(yintercept=0, color="grey70")+
+  geom_point(aes(x = cohort, y = mfree),
+             size=3)+
+  labs(x = NULL, y = "Z-transformed scale\n")+
+  scale_x_discrete(breaks=c("1", "2", "3", "4"),
+                   labels=c("Interwar", "Boomers", 
+                            "Gen X", "Millennials"))+
+  ylim(-0.5,0.5)+
+  theme_bw()+
+  theme(axis.text = element_text(color="black", size=10))
+
+
+p2 <- ess_1_7 %>%
+  filter_at(vars(cohort, freehms),all_vars(!is.na(.)))%>%
+  group_by(cohort) %>%
+  summarise(mfree = weighted.mean(freehms, weight, na.rm=T)) %>%
+ggplot()+
+  geom_point(aes(x = cohort, 
+                 y = mfree),
+             size=3)+
+  geom_hline(yintercept=3, color="grey70")+
+  ylim(1,5)+
+  labs(x = NULL, y = "Original scale\n")+
+  scale_x_discrete(breaks=c("1", "2", "3", "4"),
+        labels=c("Interwar", "Boomers", 
+                 "Gen X", "Millennials"))+
+  theme_bw()+
+  theme(axis.text = element_text(color="black", size=10))
+
+p3 <- ggarrange(p1, p2)
+
+ggsave(here("figures", "freehms.png"),
+       device="png", height=4, 
+       width=7, units="in", dpi=500)
+
+
+```
+
+
+Attitudes in comparison: different scales
+```{r}
+
+p2_1 <- ess_1_7 %>%
+  filter_at(vars(cohort, imueclt, imwbcnt, euftf),all_vars(!is.na(.)))%>%
+  select(cohort, imueclt, imwbcnt, euftf, weight)%>%
+  mutate(imuecltz = wt.scale(imueclt, weight),
+         euftfz = wt.scale(euftf, weight),
+         imwbcntz = wt.scale(imwbcnt, weight)) %>%
+  group_by(cohort) %>%
+  summarise("Mig. culture" = weighted.mean(imuecltz, weight, na.rm=TRUE),
+            "EU integration" = weighted.mean(euftfz, weight, na.rm=TRUE),
+            "Mig. economy" = weighted.mean(imwbcntz, weight, na.rm=TRUE)) %>%
+  pivot_longer(-cohort, names_to = "items", values_to = "index") %>%
+ggplot()+
+  geom_hline(yintercept = 0, color="grey70")+
+  geom_point(aes(x = cohort, y = index), size=2)+
+  labs(y = "z-transformed scores\n",
+       x = NULL,
+       color = NULL)+
+  scale_x_discrete(breaks=c("1", "2", "3", "4"),
+                   labels=c("Interwar", "Boomers", 
+                            "Gen X", "Millennials"))+
+  ylim(-0.3,0.3)+
+  theme_bw()+
+  theme(axis.text = element_text(color = "black", size=8),
+        legend.position = "top")+
+  facet_wrap(~items)
+
+
+p2_2 <- ess_1_7 %>%
+  filter_at(vars(cohort, imueclt, imwbcnt, euftf),all_vars(!is.na(.)))%>%
+  select(cohort, imueclt, imwbcnt, euftf)%>%
+  group_by(cohort) %>%
+  summarise("Mig. culture" = weighted.mean(imueclt, na.rm=TRUE),
+            "EU integration" = weighted.mean(euftf, na.rm=TRUE),
+            "Mig. economy" = weighted.mean(imwbcnt, na.rm=TRUE)) %>%
+  pivot_longer(-cohort, names_to = "items", values_to = "index") %>%
+ggplot()+
+  geom_hline(yintercept=5, color="grey70")+
+  geom_point(aes(x = cohort, y = index), size=2)+
+  labs(y = "Original scale\n",
+       x = NULL,
+       color = NULL)+
+  scale_x_discrete(breaks=c("1", "2", "3", "4"),
+                   labels=c("Interwar", "Boomers", 
+                            "Gen X", "Millennials"))+
+  ylim(0,10)+
+  theme_bw()+
+  theme(axis.text = element_text(color = "black", size=8),
+        legend.position = "top")+
+  facet_wrap(~items)
+
+p2_3 <- ggarrange(p2_1, p2_2, nrow=2)
+
+ggsave(here("figures", "cultitems.png"),
+       device="png", height=5, 
+       width=7, units="in", dpi=500)
+
+
+```
+
+
+Attitudes in comparison: different scales
+```{r}
+
+p3_1 <- ess_1_7 %>%
+  filter_at(vars(cohort, freehms, wmcpwrk),all_vars(!is.na(.)))%>%
+  select(cohort, freehms, wmcpwrk, weight)%>%
+  mutate(freehmsz = wt.scale(freehms, weight),
+         wmcpwrkz = wt.scale(wmcpwrk, weight)) %>%
+  group_by(cohort) %>%
+  summarise(gay_rights = weighted.mean(freehmsz, weight, na.rm=TRUE),
+            women_work = weighted.mean(wmcpwrkz, weight, na.rm=TRUE)) %>%
+  pivot_longer(-cohort, names_to = "items", values_to = "index") %>%
+ggplot()+
+  geom_hline(yintercept = 0, color="grey70")+
+  geom_point(aes(x = cohort, y = index), size=2)+
+  labs(y = "z scores\n",
+       x = NULL,
+       color = NULL)+
+  scale_x_discrete(breaks=c("1", "2", "3", "4"),
+                   labels=c("Interwar", "Boomers", 
+                            "Gen X", "Millennials"))+
+  ylim(-0.3,0.3)+
+  theme_minimal()+
+  theme(axis.text = element_text(color = "black", size=8),
+        legend.position = "top")+
+  facet_wrap(~items)
+
+
+p3_2 <- ess_1_7 %>%
+  filter_at(vars(cohort, freehms, wmcpwrk),all_vars(!is.na(.)))%>%
+  select(cohort, freehms, wmcpwrk,weight)%>%
+  group_by(cohort) %>%
+  summarise(gay_rights = weighted.mean(freehms, weight, na.rm=TRUE),
+            women_work = weighted.mean(wmcpwrk, weight, na.rm=TRUE)) %>%
+  pivot_longer(-cohort, names_to = "items", values_to = "index") %>%
+ggplot()+
+  geom_hline(yintercept=3, color="grey70")+
+  geom_point(aes(x = cohort, y = index), size=2)+
+  labs(y = "Original scale\n",
+       x = NULL,
+       color = NULL)+
+  scale_x_discrete(breaks=c("1", "2", "3", "4"),
+                   labels=c("Interwar", "Boomers", 
+                            "Gen X", "Millennials"))+
+  ylim(1,5)+
+  theme_minimal()+
+  theme(axis.text = element_text(color = "black", size=8),
+        legend.position = "top")+
+  facet_wrap(~items)
+
+p3_3 <- ggarrange(p3_1, p3_2, nrow=2)
+
+```
+
+
+Regression with and without country dummies
+```{r}
+
+ess_1_7 <- ess_1_7 %>%
+  filter(RC1!="NA") %>%
+  mutate(authz = wt.scale(RC1, weight))
+
+m1 <- feols(authz~ cohort | essround, data = ess_1_7)
+m2 <- feols(authz~ cohort | essround + cntry, data = ess_1_7)
+
+etable(m1, m2)
+
+```
+
+
+Authoritarian and libertarian values - z-transformed factors
+```{r}
+
+p1_1 <- ess_1_7 %>%
+  filter_at(vars(cohort, RC1, RC2),all_vars(!is.na(.)))%>%
+  mutate(authz = wt.scale(RC1, weight),
+         libz = wt.scale(RC2, weight)) %>%
+  group_by(cohort) %>%
+  summarise(authoritarian = weighted.mean(authz, weight, na.rm=T),
+            libertarian  = weighted.mean(libz, weight, na.rm =T)) %>% 
+  select(cohort, authoritarian, libertarian) %>%
+  pivot_longer(-cohort, names_to = "scale", values_to = "values") %>%
+ggplot()+
+  geom_line(aes(x = cohort, y = values, 
+                group=scale,
+                linetype=scale), size=1)+
+  geom_point(aes(x = cohort, y = values), size=2)+
+  geom_hline(yintercept=0,
+             color = "grey70")+
+  labs(x = NULL, y = "z scores",
+       group = NULL, linetype = NULL)+
+  scale_x_discrete(breaks=c("1", "2", "3", "4"),
+        labels=c("Interwar", "Boomers", "Gen X", "Millennials"))+
+  scale_linetype_manual(values=c("twodash", "dotted"))+
+  ylim(-.5,.5)+
+  theme_bw()+
+  theme(axis.text = element_text(color="black",
+                                 size = 10))
+
+ggsave(here("figures", "schwartz.png"),
+       device="png", height=4, 
+       width=6, units="in", dpi=500)
+
+```
+
+
+Authoritarian and libertarian values - orginal scales
+```{r}
+
+p3_1 <- ess_1_7 %>%
+  select(cohort, weight, behave, secure, safety, tradition, rules) %>%
+  filter(cohort!="NA") %>%
+  pivot_longer(-(1:2), names_to="item", values_to="index") %>%
+  group_by(cohort, item) %>%
+  summarise(mindex = weighted.mean(index, weight, na.rm=T)) %>% 
+ggplot()+
+  geom_hline(yintercept = 3.5, color = "grey70")+
+  geom_point(aes(x = cohort, y = mindex))+
+  scale_x_discrete(breaks=c("1", "2", "3", "4"),
+                   labels=c("Interwar", "Boomers", 
+                            "Gen X", "Millennials"))+
+  ylim(1,6)+
+  labs(x = NULL,
+       y = "Authoritarian values")+
+  theme_bw()+
+  theme(axis.text = element_text(color="black", size=8))+
+  coord_flip()+
+  facet_wrap(~item, ncol=5)
+
+
+p3_2 <- ess_1_7 %>%
+  filter(cohort!="NA") %>%
+  select(cohort, weight, surprise, adventure, creative, free, listen) %>%
+  pivot_longer(-(1:2), names_to="item", values_to="index") %>%
+  group_by(cohort, item) %>%
+  summarise(mindex = weighted.mean(index, weight, na.rm=TRUE)) %>% 
+ggplot(aes(x = cohort, y = mindex))+
+  geom_hline(yintercept = 3.5, color="grey70")+
+  geom_point(aes(x = cohort, y = mindex))+
+  scale_x_discrete(breaks=c("1", "2", "3", "4"),
+                   labels=c("Interwar", "Boomers", "Gen X", "Millennials"))+
+  ylim(1,6)+
+  labs(x= NULL,
+       y = "Libertarian values")+
+  theme_bw()+
+  theme(axis.text = element_text(color="black", size=8))+
+  coord_flip()+
+  facet_wrap(~item, ncol=5)
+
+p3_3 <- ggarrange(p3_1, p3_2, nrow=2)
+
+ggsave(here("figures", "schwartzitems.png"),
+       device="png", height=5, 
+       width=7, units="in", dpi=500)
+
+```
+
+Average authoritarian and liberal values: Averages and violin plot
+```{r}
+av1 <- ess_1_7 %>%
+  filter(cohort!="NA") %>%
+  group_by(cohort) %>%
+  summarise(mauth = weighted.mean(schwartzauth, weight, na.rm=TRUE)) %>% 
+ggplot()+
+  geom_violin(data = subset(ess_1_7, cohort!="NA"),
+              aes(x = cohort, y = schwartzauth), 
+              color = "grey80",
+              fill = "grey80",
+              adjust = 1.3)+
+  geom_point(aes(x = cohort, y = mauth), color = "black")+
+  geom_hline(yintercept = 50, color = "grey70")+
+scale_x_discrete(breaks=c("1", "2", "3", "4"),
+                   labels=c("Interwar", 
+                            "Boomers", 
+                            "Gen X", 
+                            "Millennials"))+
+  #scale_y_continuous(limits = c(1,6),
+  #                   breaks = c(1,2,3,4,5,6))+
+  labs(x = NULL, y = "Authoritarian values\n")+
+  theme_bw()+
+  theme(axis.text = element_text(color="black", size=8))
+
+av2 <- ess_1_7 %>%
+  filter(cohort!="NA") %>%
+  group_by(cohort) %>%
+  summarise(mlib = mean(schwartzlib, na.rm=TRUE),
+            ci = list(mean_cl_normal(schwartzlib) %>% 
+                        rename(mean=y, lwr=ymin, upr=ymax))) %>% 
+  unnest(ci) %>%
+ggplot()+
+  geom_violin(data = subset(ess_1_7, cohort!="NA"), 
+              aes(x = cohort, y = schwartzlib), 
+              color = "grey80",
+              fill = "grey80")+
+  geom_pointrange(aes(x = cohort, y = mlib,
+                      ymin = lwr, ymax = upr), color = "red")+
+  geom_hline(yintercept = 50, color = "grey70")+
+  scale_x_discrete(breaks=c("1", "2", "3", "4"),
+                   labels=c("Interwar", 
+                            "Boomers", 
+                            "Gen X", 
+                            "Millennials"))+
+  #scale_y_continuous(limits = c(1,6),
+  #                  breaks = c(1,2,3,4,5,6))+
+  labs(x = NULL, y = "Libertarian values")+
+  theme_minimal()+
+  theme(axis.text = element_text(color="black", size=8))
+
+```
+
+Attitudes by country
+```{r}
+cntryplot <- ess_1_7 %>%
+  filter(cohort!="NA") %>%
+  group_by(cohort, cntry) %>%
+  summarise(mauth = weighted.mean(schwartzauth, weight, na.rm=TRUE),
+            mlib = weighted.mean(schwartzlib, weight, na.rm = TRUE)) %>% 
+ggplot()+
+  geom_point(aes(x = cohort, y = mauth), color = "red")+
+  geom_point(aes(x = cohort, y = mlib), color = "blue")+
+  geom_hline(yintercept = 50, color = "grey70")+
+scale_x_discrete(breaks=c("1", "2", "3", "4"),
+                   labels=c("Interwar", 
+                            "Boomers", 
+                            "Gen X", 
+                            "Millennials"))+
+  labs(x = NULL, y = "Authoritarian values\n")+
+  theme_bw()+
+  theme(axis.text = element_text(color="black", size=8))+
+  facet_wrap(~cntry)
+
+```
+
+
+Populist values (sum of trstplt, trstprl, trstprt scaled to 100)
+```{r}
+
+by_country <- ess_1_7 %>%
+  group_by(cntry) %>%
+  summarise(mpop = 100-weighted.mean(populist, weight, na.rm=TRUE))
+
+by_cohort <- ess_1_7 %>%
+  group_by(cohort) %>%
+  summarise(mpop = 100-weighted.mean(populist, weight, na.rm=TRUE))
+
+plotpop1 <- ess_1_7 %>%
+  filter(cohort!="NA") %>%
+  group_by(cohort, cntry) %>%
+  summarise(mpop = 100-weighted.mean(populist, weight, na.rm=TRUE)) %>%
+ggplot()+
+  geom_jitter(aes(x = cohort, y = mpop,
+                  color=cntry),
+              color="grey50", 
+             size=2,
+             width=0.1,
+             alpha = 0.5)+
+  geom_point(data = by_cohort, aes(x=cohort, y=mpop),
+             size=3.5,
+             color="black")+
+  labs(x = NULL, y = "Populist attitudes\n (reversed political trust scale)")+
+  geom_hline(yintercept=50, color="grey70")+
+  ylim(0,100)+
+  scale_x_discrete(breaks=c("1", "2", "3", "4"),
+                   labels=c("Interwar", "Boomers",
+                            "Gen X", "Millennials"))+
+  theme_bw()+
+  theme(axis.text = element_text(color="black", size=10))
+
+ggsave(here("figures", "plotpop_1.png"),
+       device="png", height=5, 
+       width=7, units="in", dpi=500)
+
+```
+
+Regression model populist attitudes
+```{r}
+
+forreg <- ess_1_7 %>%
+  filter_at(vars(cohort, RC1, RC2, populist),all_vars(!is.na(.)))%>%
+  mutate(authz = wt.scale(RC1, weight),
+         libz = wt.scale(RC2, weight),
+         popz = wt.scale(populist, weight)) 
+interceptonly <- lmer(formula = populist ~ 1 + (1|cntry),
+                           data    = ess_1_7)
+
+summary(interceptonly)
+
+icc <- 110.5/(110.5+415.8)
+icc # Twenty percent of the variance are explained at the country level
+
+m1 <- lmer(formula = populist~ 1 + cohort + gender + urban + relig + factor(class5) +
+             schwartzauth + (1 |cntry), data = ess_1_7)
+
+summary(m1)
+
+m1 <- feols(populist~ cohort + schwartzauth | cntry, data = forreg)
+etable(m1)
+
+m2 <- lm(populist~ cohort + gender + urban + relig + factor(class5) +
+             schwartzauth, data = ess_1_7)
+summary(m2)
+
+```
+
+
